@@ -1,0 +1,24 @@
+# ── Secrets — NEVER commit these ─────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Node / npm ────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+
+# ── Vite build output ─────────────────────────────────────────────────────────
+dist/
+dist-ssr/
+
+# ── Supabase local dev ────────────────────────────────────────────────────────
+supabase/.branches/
+supabase/.temp/
+
+# ── VSCode ────────────────────────────────────────────────────────────────────
+.vscode/launch.json
+.vscode/*.code-workspace
+
+# ── OS files ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
