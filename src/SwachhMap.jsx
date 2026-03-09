@@ -132,7 +132,8 @@ export default function SwachhMap() {
   const [submitted, setSubmitted]   = useState(false);
   const [submitError, setSubmitError] = useState("");
   // GPS state — auto-captured when Report tab opens
-  const [gpsCoords, setGpsCoords]   = useState(null);   // { lat, lng, accuracy }
+  const [gpsCoords, setGpsCoords]   = useState(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);   // { lat, lng, accuracy }
   const [gpsStatus, setGpsStatus]   = useState("idle"); // idle | requesting | granted | denied | error
   const [cityFallback, setCityFallback] = useState(profile?.city ?? ""); // used if GPS denied
   const fileRef = useRef();
@@ -142,14 +143,6 @@ export default function SwachhMap() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [impact, setImpact]           = useState(null);
   const [loading, setLoading]         = useState({ feed: true, leaderboard: true, impact: true });
-
-  // Close user menu on outside click
-  useEffect(() => {
-    if (!showUserMenu) return;
-    const close = () => setShowUserMenu(false);
-    document.addEventListener("click", close, { once: true });
-    return () => document.removeEventListener("click", close);
-  }, [showUserMenu]);
 
   // ── 1. Auth listener — single source of truth for session state ────────────
   // Fires on: page load (restores session from localStorage), sign in,
@@ -264,6 +257,14 @@ export default function SwachhMap() {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
   }, [tab]);
+
+  // ── Close user menu on outside click ─────────────────────────────────────────
+  useEffect(() => {
+    if (!showUserMenu) return;
+    const close = () => setShowUserMenu(false);
+    document.addEventListener("click", close, { once: true });
+    return () => document.removeEventListener("click", close);
+  }, [showUserMenu]);
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
 
@@ -735,12 +736,25 @@ export default function SwachhMap() {
           <span style={styles.logo}>🌿 SwachhMap</span>
           <span style={styles.tagline}>Clean India, One Report at a Time</span>
         </div>
-        <div style={styles.userBadge} onClick={handleSignOut} title="Tap to sign out">
-          <div style={styles.avatarCircle}>{initials}</div>
-          <div>
-            <div style={styles.userName}>{profile?.display_name ?? "…"}</div>
-            <div style={styles.userLevel}>{level} · {pts} pts</div>
+        <div style={{ position: "relative" }}>
+          <div style={styles.userBadge} onClick={(e) => { e.stopPropagation(); setShowUserMenu(m => !m); }}>
+            <div style={styles.avatarCircle}>{initials}</div>
+            <div>
+              <div style={styles.userName}>{profile?.display_name ?? "…"}</div>
+              <div style={styles.userLevel}>{level} · {pts} pts</div>
+            </div>
           </div>
+          {showUserMenu && (
+            <div style={{ position:"absolute", right:0, top:"100%", marginTop:6, background:"#131f14", border:"1px solid #2a4a2e", borderRadius:12, padding:"6px 0", zIndex:100, minWidth:140, boxShadow:"0 4px 20px #00000088" }}>
+              <div style={{ padding:"8px 16px", fontSize:12, color:"#4a6b4e", borderBottom:"1px solid #1f3322" }}>
+                {user?.email ?? ""}
+              </div>
+              <button style={{ width:"100%", padding:"10px 16px", background:"none", border:"none", color:"#f87171", fontSize:13, cursor:"pointer", textAlign:"left", fontFamily:"'DM Sans',sans-serif" }}
+                onClick={() => { setShowUserMenu(false); handleSignOut(); }}>
+                🚪 Sign out
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
