@@ -84,18 +84,28 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
       const z = mapRef.current.getZoom();
       markersRef.current.forEach(m => z >= 8 ? m.addTo(mapRef.current) : m.remove());
     });
-    // Force Leaflet to recalculate container size after mount
-    // Production needs longer delay — container must be painted before heatmap renders
-    const waitForSize = (attempts = 0) => {
-      const container = mapContainer.current;
-      if (container && container.offsetWidth > 0) {
+    // Use ResizeObserver to detect when container gets real dimensions
+    // More reliable than polling — fires exactly when the browser paints the container
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) {
+          observer.disconnect();
+          mapRef.current.invalidateSize();
+          loadData("all");
+          break;
+        }
+      }
+    });
+    observer.observe(mapContainer.current);
+    // Fallback: if already sized, fire immediately
+    if (mapContainer.current.offsetWidth > 0) {
+      observer.disconnect();
+      setTimeout(() => {
         mapRef.current.invalidateSize();
         loadData("all");
-      } else if (attempts < 20) {
-        setTimeout(() => waitForSize(attempts + 1), 100);
-      }
-    };
-    waitForSize();
+      }, 0);
+    }
+    return () => observer.disconnect();
   }, [leafletReady]);
 
   // Refresh data every time the map tab is opened (component remounts due to key prop)
