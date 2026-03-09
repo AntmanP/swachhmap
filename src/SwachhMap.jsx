@@ -143,6 +143,14 @@ export default function SwachhMap() {
   const [impact, setImpact]           = useState(null);
   const [loading, setLoading]         = useState({ feed: true, leaderboard: true, impact: true });
 
+  // Close user menu on outside click
+  useEffect(() => {
+    if (!showUserMenu) return;
+    const close = () => setShowUserMenu(false);
+    document.addEventListener("click", close, { once: true });
+    return () => document.removeEventListener("click", close);
+  }, [showUserMenu]);
+
   // ── 1. Auth listener — single source of truth for session state ────────────
   // Fires on: page load (restores session from localStorage), sign in,
   // sign out, token refresh, and OAuth redirect callback.
