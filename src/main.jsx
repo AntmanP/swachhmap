@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import SwachhMap from "./swachhmap.jsx";
+import SwachhMap from "./SwachhMap.jsx";
 import MunicipalityDashboard from "./MunicipalityDashboard.jsx";
 
 // ── Simple path-based router ──────────────────────────────────────────────────
