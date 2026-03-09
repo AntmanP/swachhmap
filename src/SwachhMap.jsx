@@ -470,7 +470,14 @@ export default function SwachhMap() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    // onAuthStateChange sets authStep back to "email" automatically
+    // Explicitly reset all state — don't rely on onAuthStateChange firing
+    setUser(null);
+    setProfile(null);
+    setAuthStep("email");
+    setEmail("");
+    setOtp("");
+    setGpsCoords(null);
+    setGpsStatus("idle");
   }
 
   // Resend OTP
