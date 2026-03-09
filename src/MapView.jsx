@@ -93,10 +93,12 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
     }).addTo(mapRef.current);
     L.control.zoom({ position: "bottomright" }).addTo(mapRef.current);
     if (L.heatLayer) {
+      // Don't add to map yet — adding with empty data before container is sized
+      // causes "source width is 0" IndexSizeError in leaflet-heat canvas renderer
       heatLayerRef.current = L.heatLayer([], {
         radius: 35, blur: 25, maxZoom: 13,
         gradient: { 0.0: "#0f1a10", 0.2: "#1a3320", 0.4: "#2d7a3a", 0.6: "#a3e635", 0.8: "#fb923c", 1.0: "#e11d48" },
-      }).addTo(mapRef.current);
+      }); // NOT .addTo(mapRef.current) yet
     }
     mapRef.current.on("zoomend", () => {
       const z = mapRef.current.getZoom();
@@ -106,11 +108,17 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
       }
     });
     // Force Leaflet to recalculate container size after mount
-    // Fixes "source width is 0" error when map remounts inside a flex container
-    setTimeout(() => {
-      if (mapRef.current) mapRef.current.invalidateSize();
-      loadData("all");
-    }, 50);
+    // Production needs longer delay — container must be painted before heatmap renders
+    const waitForSize = (attempts = 0) => {
+      const container = mapContainer.current;
+      if (container && container.offsetWidth > 0) {
+        mapRef.current.invalidateSize();
+        loadData("all");
+      } else if (attempts < 20) {
+        setTimeout(() => waitForSize(attempts + 1), 100);
+      }
+    };
+    waitForSize();
   }, [leafletReady]);
 
   // Refresh data every time the map tab is opened (component remounts due to key prop)
@@ -226,7 +234,13 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
   function renderOnMap(data) {
     const L = window.L;
     if (!mapRef.current || !L) return;
-    if (heatLayerRef.current) heatLayerRef.current.setLatLngs(clustersToHeatPoints(data));
+    if (heatLayerRef.current) {
+      // Add to map now that container is guaranteed to have real dimensions
+      if (!mapRef.current.hasLayer(heatLayerRef.current)) {
+        heatLayerRef.current.addTo(mapRef.current);
+      }
+      heatLayerRef.current.setLatLngs(clustersToHeatPoints(data));
+    }
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
     const currentZoom = mapRef.current.getZoom();
