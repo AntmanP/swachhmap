@@ -18,7 +18,6 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "./lib/supabase.js";
 
-const SEVERITY_WEIGHT = { Low: 0.25, Medium: 0.5, High: 0.8, Critical: 1.0 };
 const SEVERITY_COLOR  = { Low: "#4ade80", Medium: "#fb923c", High: "#f87171", Critical: "#e11d48" };
 
 const DEV_CLUSTERS = [
@@ -40,18 +39,11 @@ const DEV_CLUSTERS = [
   { centroid_lng: 75.7873, centroid_lat: 26.9124, report_count: 12, dominant_type: "Hazardous Waste",     max_severity: "Critical" },
 ];
 
-function clustersToHeatPoints(clusters) {
-  return clusters.map(c => [
-    c.centroid_lat,
-    c.centroid_lng,
-    (SEVERITY_WEIGHT[c.max_severity] ?? 0.5) * Math.min(Math.log(c.report_count + 1) / 4, 1),
-  ]);
-}
+// clustersToHeatPoints removed — leaflet-heat replaced with circle markers
 
 export default function MapView({ devMode = true, onLocationCaptured }) {
   const mapContainer  = useRef(null);
   const mapRef        = useRef(null);
-  const heatLayerRef  = useRef(null);
   const markersRef    = useRef([]);
   const userMarkerRef = useRef(null);
 
@@ -65,20 +57,15 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
 
   // Load Leaflet + leaflet-heat from CDN
   useEffect(() => {
-    if (window.L && window.L.heatLayer) { setLeafletReady(true); return; }
+    if (window.L) { setLeafletReady(true); return; }
     const css = document.createElement("link");
     css.rel = "stylesheet";
     css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
     document.head.appendChild(css);
     const s1 = document.createElement("script");
     s1.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    s1.onload = () => {
-      const s2 = document.createElement("script");
-      s2.src = "https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js";
-      s2.onload  = () => setLeafletReady(true);
-      s2.onerror = () => setLeafletReady(true);
-      document.head.appendChild(s2);
-    };
+    s1.onload  = () => setLeafletReady(true);
+    s1.onerror = () => setLeafletReady(true);
     document.head.appendChild(s1);
   }, []);
 
@@ -92,20 +79,10 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
       maxZoom: 18,
     }).addTo(mapRef.current);
     L.control.zoom({ position: "bottomright" }).addTo(mapRef.current);
-    if (L.heatLayer) {
-      // Don't add to map yet — adding with empty data before container is sized
-      // causes "source width is 0" IndexSizeError in leaflet-heat canvas renderer
-      heatLayerRef.current = L.heatLayer([], {
-        radius: 35, blur: 25, maxZoom: 13,
-        gradient: { 0.0: "#0f1a10", 0.2: "#1a3320", 0.4: "#2d7a3a", 0.6: "#a3e635", 0.8: "#fb923c", 1.0: "#e11d48" },
-      }); // NOT .addTo(mapRef.current) yet
-    }
+    // No leaflet-heat — use circle markers only (avoids canvas width=0 crash)
     mapRef.current.on("zoomend", () => {
       const z = mapRef.current.getZoom();
-      markersRef.current.forEach(m => z >= 11 ? m.addTo(mapRef.current) : m.remove());
-      if (heatLayerRef.current) {
-        z >= 13 ? mapRef.current.removeLayer(heatLayerRef.current) : mapRef.current.addLayer(heatLayerRef.current);
-      }
+      markersRef.current.forEach(m => z >= 8 ? m.addTo(mapRef.current) : m.remove());
     });
     // Force Leaflet to recalculate container size after mount
     // Production needs longer delay — container must be painted before heatmap renders
@@ -234,27 +211,32 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
   function renderOnMap(data) {
     const L = window.L;
     if (!mapRef.current || !L) return;
-    if (heatLayerRef.current) {
-      // Add to map now that container is guaranteed to have real dimensions
-      if (!mapRef.current.hasLayer(heatLayerRef.current)) {
-        heatLayerRef.current.addTo(mapRef.current);
-      }
-      heatLayerRef.current.setLatLngs(clustersToHeatPoints(data));
-    }
+    // Remove old markers
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
     const currentZoom = mapRef.current.getZoom();
     data.forEach(c => {
-      const radius = Math.max(6, Math.min(22, Math.sqrt(c.report_count) * 2));
       const color  = SEVERITY_COLOR[c.max_severity] ?? "#7dba5f";
-      const marker = L.circleMarker([c.centroid_lat, c.centroid_lng], { radius, fillColor: color, fillOpacity: 0.85, color: "#ffffff33", weight: 1.5 });
-      marker.on("click", () => {
+      // Outer glow ring — simulates heatmap density
+      const glowRadius = Math.max(18, Math.min(60, Math.sqrt(c.report_count) * 8));
+      const glow = L.circleMarker([c.centroid_lat, c.centroid_lng], {
+        radius: glowRadius, fillColor: color, fillOpacity: 0.12,
+        color: color, weight: 0.5, opacity: 0.3,
+      });
+      // Inner solid dot
+      const dot = L.circleMarker([c.centroid_lat, c.centroid_lng], {
+        radius: Math.max(6, Math.min(18, Math.sqrt(c.report_count) * 2.5)),
+        fillColor: color, fillOpacity: 0.9,
+        color: "#ffffff44", weight: 1.5,
+      });
+      dot.on("click", () => {
         setSelectedCluster(c);
         mapRef.current.flyTo([c.centroid_lat, c.centroid_lng], Math.max(mapRef.current.getZoom(), 13), { duration: 0.8 });
       });
-      marker.bindTooltip(`<b>${c.dominant_type}</b><br/>${c.report_count} reports · ${c.max_severity}`, { className: "swachh-tooltip", direction: "top" });
-      if (currentZoom >= 11) marker.addTo(mapRef.current);
-      markersRef.current.push(marker);
+      dot.bindTooltip(`<b>${c.dominant_type}</b><br/>${c.report_count} reports · ${c.max_severity}`, { className: "swachh-tooltip", direction: "top" });
+      glow.addTo(mapRef.current);
+      dot.addTo(mapRef.current);
+      markersRef.current.push(glow, dot);
     });
   }
 
@@ -328,11 +310,7 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
             <div style={S.popupAction}>{selectedCluster.max_severity==="Critical"?"⚠️ Municipality alert triggered":"🧹 Cleanup recommended"}</div>
           </div>
         )}
-        <div style={S.legend}>
-          <div style={S.legendTitle}>Density</div>
-          <div style={S.legendBar} />
-          <div style={S.legendLbls}><span>Low</span><span>High</span></div>
-        </div>
+
       </div>
 
       {userCoords && (
