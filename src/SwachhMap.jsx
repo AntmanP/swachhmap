@@ -484,14 +484,21 @@ export default function SwachhMap() {
           display_name: safeName,
           city:         city.trim().slice(0, 60) || null,
           email:        user.email ?? null,
-          phone:        user.phone ?? null,
         }, { onConflict: "id" })
         .select()
         .single();
 
       if (dbErr) {
         console.error("[onboard] DB error:", dbErr);
-        setAuthError(`Could not save profile: ${dbErr.message}`);
+        // 406 means user already exists — just load their profile and proceed
+        const { data: existing } = await supabase
+          .from("users").select("*").eq("id", user.id).single();
+        if (existing) {
+          setProfile(existing);
+          setAuthStep("done");
+        } else {
+          setAuthError(`Could not save profile: ${dbErr.message}`);
+        }
       } else {
         setProfile(prof);
         setAuthStep("done");
