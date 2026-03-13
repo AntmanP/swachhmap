@@ -239,7 +239,8 @@ export default function SwachhMap() {
   // Fallback: if denied, show city dropdown so the report is still useful.
   useEffect(() => {
     if (tab !== "report") return;
-    // Auto-reset the form when user navigates back to Report tab after submitting
+    // Always reset form when Report tab becomes active
+    // This handles: first load, tab switch back, and post-submit navigation
     setStep("idle");
     setPreview(null);
     setResult(null);
@@ -538,8 +539,23 @@ export default function SwachhMap() {
     try {
       // Direct DB insert — Edge Function had persistent 401 JWT issues.
       // Points awarded via points_ledger insert; DB trigger syncs user totals.
-      const city = cityFallback || profile?.city || null;
       const pointsToAward = result.points ?? 25;
+
+      // Reverse geocode GPS coords to get actual city name
+      let resolvedCity = cityFallback || profile?.city || null;
+      let locationLabel = null;
+      if (gpsCoords) {
+        locationLabel = `${gpsCoords.lat.toFixed(5)}, ${gpsCoords.lng.toFixed(5)}`;
+        try {
+          const geoRes = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${gpsCoords.lat}&lon=${gpsCoords.lng}&format=json&zoom=10&addressdetails=1`,
+            { headers: { "Accept-Language": "en", "User-Agent": "SwachhMap/1.0" } }
+          );
+          const geoJson = await geoRes.json();
+          const a = geoJson.address ?? {};
+          resolvedCity = a.city ?? a.town ?? a.state_district ?? a.county ?? resolvedCity;
+        } catch (e) { console.warn("Geocode failed:", e); }
+      }
 
       const { data: report, error: reportErr } = await supabase
         .from("reports")
@@ -552,10 +568,8 @@ export default function SwachhMap() {
           hazardous:      result.hazardous ?? false,
           quantity_est:   result.quantity_estimate ?? null,
           action_rec:     result.action_recommended ?? null,
-          location_label: gpsCoords
-            ? `${gpsCoords.lat.toFixed(5)}, ${gpsCoords.lng.toFixed(5)}`
-            : city ?? null,
-          city:           city ?? null,
+          location_label: locationLabel ?? resolvedCity ?? null,
+          city:           resolvedCity ?? null,
           status:         "pending",
           points_awarded: pointsToAward,
         })
@@ -582,6 +596,16 @@ export default function SwachhMap() {
       setTimeout(() => refreshProfile(), 1500);
 
       setSubmitted(true);
+      // Auto-reset after 3 seconds so tapping another tab and back isn't needed
+      setTimeout(() => {
+        setStep("idle");
+        setPreview(null);
+        setResult(null);
+        setTags([]);
+        setTagInput("");
+        setSubmitted(false);
+        setSubmitError("");
+      }, 3000);
     } catch (err) {
       console.error("[submit]", err);
       setSubmitError(err.message);
