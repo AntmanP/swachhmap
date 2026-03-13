@@ -239,6 +239,14 @@ export default function SwachhMap() {
   // Fallback: if denied, show city dropdown so the report is still useful.
   useEffect(() => {
     if (tab !== "report") return;
+    // Auto-reset the form when user navigates back to Report tab after submitting
+    setStep("idle");
+    setPreview(null);
+    setResult(null);
+    setTags([]);
+    setTagInput("");
+    setSubmitted(false);
+    setSubmitError("");
     if (gpsStatus === "granted" || gpsStatus === "requesting") return;
     if (!("geolocation" in navigator)) { setGpsStatus("error"); return; }
 
