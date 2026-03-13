@@ -293,7 +293,16 @@ export default function SwachhMap() {
           .order("created_at", { ascending: false })
           .limit(50));
       }
-      setFeed(data ?? []);
+      const feedData = data ?? [];
+      setFeed(feedData);
+      // Enrich with real place names in background (1 req/sec — Nominatim TOS)
+      feedData.forEach((item, i) => {
+        if (!item.location_label) return;
+        setTimeout(async () => {
+          const place = await reverseGeocode(item.location_label);
+          if (place) setFeed(prev => prev.map(f => f.id === item.id ? { ...f, _place: place } : f));
+        }, i * 1100);
+      });
     } catch (e) {
       console.warn("[feed]", e);
       setFeed([]);
@@ -1011,7 +1020,7 @@ export default function SwachhMap() {
                 <div style={styles.feedBody}>
                   <div style={styles.feedTop}>
                     <span style={styles.feedUser}>{item.reporter_name}</span>
-                    {item.city && <span style={styles.feedCity}>{item.city}</span>}
+                    {(item._place || item.city) && <span style={styles.feedCity}>📍 {item._place ?? item.city}</span>}
                     <span style={styles.feedTime}>{timeAgo(item.created_at)}</span>
                   </div>
                   <div style={styles.feedType}>{item.waste_type}</div>
