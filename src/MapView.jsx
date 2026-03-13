@@ -53,7 +53,7 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
   const [selectedCluster, setSelectedCluster]     = useState(null);
   const [filterSeverity, setFilterSeverity]       = useState("all");
   const [statsBar, setStatsBar]                   = useState({ total: 0, critical: 0, zones: 0 });
-  const [loadingData, setLoadingData]             = useState(true);
+  const [loadingData, setLoadingData]             = useState(false);
 
   // Load Leaflet + leaflet-heat from CDN
   useEffect(() => {
@@ -84,28 +84,31 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
       const z = mapRef.current.getZoom();
       markersRef.current.forEach(m => z >= 8 ? m.addTo(mapRef.current) : m.remove());
     });
-    // Use ResizeObserver to detect when container gets real dimensions
-    // More reliable than polling — fires exactly when the browser paints the container
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentRect.width > 0) {
-          observer.disconnect();
-          mapRef.current.invalidateSize();
-          loadData("all");
-          break;
+    // Try immediate load first, then ResizeObserver as backup
+    const triggerLoad = () => {
+      if (mapRef.current) mapRef.current.invalidateSize();
+      loadData("all");
+    };
+
+    if (mapContainer.current && mapContainer.current.offsetWidth > 0) {
+      // Container already has dimensions — load immediately
+      setTimeout(triggerLoad, 0);
+    } else {
+      // Wait for container to be painted
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 0) {
+            observer.disconnect();
+            triggerLoad();
+            break;
+          }
         }
-      }
-    });
-    observer.observe(mapContainer.current);
-    // Fallback: if already sized, fire immediately
-    if (mapContainer.current.offsetWidth > 0) {
-      observer.disconnect();
-      setTimeout(() => {
-        mapRef.current.invalidateSize();
-        loadData("all");
-      }, 0);
+      });
+      if (mapContainer.current) observer.observe(mapContainer.current);
+      // Hard fallback — load after 500ms regardless
+      const fallback = setTimeout(() => { observer.disconnect(); triggerLoad(); }, 500);
+      return () => { observer.disconnect(); clearTimeout(fallback); };
     }
-    return () => observer.disconnect();
   }, [leafletReady]);
 
   // Refresh data every time the map tab is opened (component remounts due to key prop)
@@ -114,7 +117,13 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
 
   async function loadData(severity = "all") {
     setLoadingData(true);
+    // Safety: always hide spinner after 5s no matter what
+    const safetyTimer = setTimeout(() => {
+      setLoadingData(false);
+      console.warn("MapView: loadData safety timeout — showing empty map");
+    }, 5000);
     let data;
+    try {
     if (devMode) {
       await new Promise(r => setTimeout(r, 400));
       data = DEV_CLUSTERS;
@@ -122,7 +131,7 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
       // Direct table query — RPC requires PostGIS location col which isn't
       // populated yet. Direct scan works on location_label text column.
       {
-        const { data: rows } = await supabase
+        const { data: rows, error: rowsError } = await supabase
           .from("reports")
           .select("city, severity, waste_type, location_label")
           .order("created_at", { ascending: false })
@@ -195,9 +204,15 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
         // If all reports had GPS, skip cityData entirely
         const mergedData = noGpsRows > 0 ? [...gpsReports, ...cityData] : gpsReports;
         data = mergedData.length ? mergedData : DEV_CLUSTERS;
+        if (rowsError) console.error("MapView query error:", rowsError);
       }
     }
+    } catch (err) {
+      console.error("MapView loadData error:", err);
+      data = DEV_CLUSTERS;
+    }
     const filtered = severity === "all" ? data : data.filter(c => c.max_severity === severity);
+    clearTimeout(safetyTimer);
     setLoadingData(false);
     renderOnMap(filtered);
     const totalReports = filtered.reduce((s, c) => s + c.report_count, 0);
@@ -296,10 +311,10 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
       </div>
 
       <div style={S.mapWrap}>
-        {(!leafletReady || loadingData) && (
+        {(loadingData) && (
           <div style={S.loadOverlay}>
             <div style={S.loadSpinner}>⟳</div>
-            <div style={{ fontSize: 13, color: "#4a6b4e" }}>{!leafletReady ? "Loading map…" : "Loading reports…"}</div>
+            <div style={{ fontSize: 13, color: "#4a6b4e" }}>Loading reports…</div>
           </div>
         )}
         <div ref={mapContainer} style={S.map} />
