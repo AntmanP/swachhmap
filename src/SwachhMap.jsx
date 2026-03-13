@@ -267,15 +267,32 @@ export default function SwachhMap() {
     );
   }, [tab]);
 
-  // ── Close user menu on outside click ─────────────────────────────────────────
-  useEffect(() => {
-    if (!showUserMenu) return;
-    const close = () => setShowUserMenu(false);
-    document.addEventListener("click", close, { once: true });
-    return () => document.removeEventListener("click", close);
-  }, [showUserMenu]);
-
   // ── Data loaders ─────────────────────────────────────────────────────────────
+
+  // ── Reverse-geocode cache ────────────────────────────────────────────────────
+  const geocodeCache = useRef({});
+
+  async function reverseGeocode(location_label) {
+    if (!location_label) return null;
+    const parts = location_label.split(",").map(s => Number(s.trim()));
+    if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+    const [lat, lng] = parts;
+    const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+    if (geocodeCache.current[key]) return geocodeCache.current[key];
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=14&addressdetails=1`,
+        { headers: { "Accept-Language": "en", "User-Agent": "SwachhMap/1.0" } }
+      );
+      const json = await res.json();
+      const a = json.address ?? {};
+      const area = a.suburb ?? a.neighbourhood ?? a.village ?? a.town ?? a.county ?? "";
+      const cityName = a.city ?? a.town ?? a.state_district ?? a.state ?? "";
+      const label = [area, cityName].filter(Boolean).join(", ") || null;
+      geocodeCache.current[key] = label;
+      return label;
+    } catch { return null; }
+  }
 
   async function loadFeed() {
     setLoading(l => ({ ...l, feed: true }));
@@ -687,7 +704,7 @@ export default function SwachhMap() {
                     {authLoading && authMode === "email" ? "Sending…" : "Send Sign-in Code →"}
                   </button>
                   <div style={{ fontSize:11, color:"#3a5a3e", textAlign:"center", marginTop:10 }}>
-                    We'll email you a 6-digit code — no password needed
+                    We'll email you a sign-in link — no password needed
                   </div>
                 </>
               )}
@@ -695,12 +712,12 @@ export default function SwachhMap() {
               {authStep === "otp" && (
                 <>
                   <div style={{ fontSize:13, color:"#7dba5f", fontWeight:600, marginBottom:4 }}>
-                    📧 Code sent to {email}
+                    📧 Email sent to {email}
                   </div>
                   <div style={{ fontSize:11, color:"#4a6b4e", marginBottom:16 }}>
-                    Check your inbox (and spam folder). Enter the 6-digit code below.
+                    Check your inbox and click the sign-in link. Or enter the 6-digit code if you got one.
                   </div>
-                  <label style={styles.label}>6-digit code</label>
+                  <label style={styles.label}>6-digit code (if shown in email)</label>
                   <input
                     style={{ ...styles.input, letterSpacing:10, fontSize:22, textAlign:"center", marginBottom:8 }}
                     placeholder="000000" maxLength={6} value={otp}
@@ -785,7 +802,7 @@ export default function SwachhMap() {
           <span style={styles.tagline}>Clean India, One Report at a Time</span>
         </div>
         <div style={{ position: "relative" }}>
-          <div style={styles.userBadge} onClick={(e) => { e.stopPropagation(); setShowUserMenu(m => !m); }}>
+          <div style={styles.userBadge} onClick={() => setShowUserMenu(m => !m)}>
             <div style={styles.avatarCircle}>{initials}</div>
             <div>
               <div style={styles.userName}>{profile?.display_name ?? "…"}</div>
@@ -793,15 +810,20 @@ export default function SwachhMap() {
             </div>
           </div>
           {showUserMenu && (
-            <div style={{ position:"absolute", right:0, top:"100%", marginTop:6, background:"#131f14", border:"1px solid #2a4a2e", borderRadius:12, padding:"6px 0", zIndex:100, minWidth:140, boxShadow:"0 4px 20px #00000088" }}>
-              <div style={{ padding:"8px 16px", fontSize:12, color:"#4a6b4e", borderBottom:"1px solid #1f3322" }}>
-                {user?.email ?? ""}
+            <>
+              {/* Invisible overlay to catch outside clicks */}
+              <div style={{ position:"fixed", inset:0, zIndex:99 }} onClick={() => setShowUserMenu(false)} />
+              <div style={{ position:"absolute", right:0, top:"100%", marginTop:6, background:"#131f14", border:"1px solid #2a4a2e", borderRadius:12, padding:"6px 0", zIndex:100, minWidth:160, boxShadow:"0 4px 20px #00000088" }}>
+                <div style={{ padding:"8px 16px", fontSize:12, color:"#4a6b4e", borderBottom:"1px solid #1f3322" }}>
+                  {user?.email ?? ""}
+                </div>
+                <button
+                  style={{ width:"100%", padding:"10px 16px", background:"none", border:"none", color:"#f87171", fontSize:13, cursor:"pointer", textAlign:"left", fontFamily:"'DM Sans',sans-serif" }}
+                  onClick={handleSignOut}>
+                  🚪 Sign out
+                </button>
               </div>
-              <button style={{ width:"100%", padding:"10px 16px", background:"none", border:"none", color:"#f87171", fontSize:13, cursor:"pointer", textAlign:"left", fontFamily:"'DM Sans',sans-serif" }}
-                onClick={() => { setShowUserMenu(false); handleSignOut(); }}>
-                🚪 Sign out
-              </button>
-            </div>
+            </>
           )}
         </div>
       </header>

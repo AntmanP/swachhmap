@@ -128,6 +128,12 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
       await new Promise(r => setTimeout(r, 400));
       data = DEV_CLUSTERS;
     } else {
+      // Ensure session is ready before querying — avoids RLS hang on cold load
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.warn("MapView: no session yet, using dev clusters");
+        data = DEV_CLUSTERS;
+      } else {
       // Direct table query — RPC requires PostGIS location col which isn't
       // populated yet. Direct scan works on location_label text column.
       {
@@ -206,6 +212,7 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
         data = mergedData.length ? mergedData : DEV_CLUSTERS;
         if (rowsError) console.error("MapView query error:", rowsError);
       }
+      } // end session check
     }
     } catch (err) {
       console.error("MapView loadData error:", err);
