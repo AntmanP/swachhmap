@@ -63,6 +63,14 @@ export default function MapView({ devMode = false, onLocationCaptured, mapActive
       window.removeEventListener("resize", handleResize);
     };
   }, []);
+
+  // Invalidate size whenever map tab becomes active — fixes white tiles
+  useEffect(() => {
+    if (mapActive && mapRef.current) {
+      setTimeout(() => mapRef.current?.invalidateSize(), 50);
+    }
+  }, [mapActive]);
+
   const userMarkerRef = useRef(null);
 
   const [leafletReady, setLeafletReady]           = useState(false);
@@ -136,11 +144,26 @@ export default function MapView({ devMode = false, onLocationCaptured, mapActive
   // Having two callers caused double-fetch and race conditions.
 
   async function loadData(severity = "all") {
+    // Show cached map data instantly while fetching fresh
+    try {
+      const cached = localStorage.getItem("swachh_map");
+      if (cached) {
+        const { data: cData, ts } = JSON.parse(cached);
+        if (Date.now() - ts < 10 * 60 * 1000) { // 10 min cache
+          const filtered = severity === "all" ? cData : cData.filter(c => c.max_severity === severity);
+          renderOnMap(filtered);
+          const total = filtered.reduce((s,c) => s + c.report_count, 0);
+          const critical = filtered.filter(c => c.max_severity === "Critical").reduce((s,c) => s + c.report_count, 0);
+          setStatsBar({ total, critical, zones: filtered.length });
+          setLoadingData(false);
+        }
+      }
+    } catch {}
     setLoadingData(true);
     const safetyTimer = setTimeout(() => {
       setLoadingData(false);
       console.warn("MapView: loadData safety timeout — showing empty map");
-    }, 45000); // covers 3 retry attempts with waits
+    }, 45000);
     let data;
     try {
     if (devMode) {
@@ -244,6 +267,9 @@ export default function MapView({ devMode = false, onLocationCaptured, mapActive
         // If all reports had GPS, skip cityData entirely
         const mergedData = noGpsRows > 0 ? [...gpsReports, ...cityData] : gpsReports;
         data = mergedData.length ? mergedData : DEV_CLUSTERS;
+        if (mergedData.length) {
+          try { localStorage.setItem("swachh_map", JSON.stringify({ data, ts: Date.now() })); } catch {}
+        }
         if (rowsError) console.error("MapView query error:", rowsError);
       }
     }

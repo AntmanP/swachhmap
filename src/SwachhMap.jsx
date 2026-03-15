@@ -230,13 +230,17 @@ export default function SwachhMap() {
   useEffect(() => {
     // Only reload feed/leaderboard/impact once per session unless explicitly refreshed
     // Prevents infinite re-fetches when state updates cause re-renders
-    if (tab === "leaderboard" && !loadedTabs.current.has("leaderboard")) {
-      loadedTabs.current.add("leaderboard");
-      loadLeaderboard();
+    if (tab === "leaderboard") {
+      if (!loadedTabs.current.has("leaderboard") || leaderboard.length === 0) {
+        loadedTabs.current.add("leaderboard");
+        loadLeaderboard();
+      }
     }
-    if (tab === "impact" && !loadedTabs.current.has("impact")) {
-      loadedTabs.current.add("impact");
-      loadImpact();
+    if (tab === "impact") {
+      if (!loadedTabs.current.has("impact") || !impact) {
+        loadedTabs.current.add("impact");
+        loadImpact();
+      }
     }
     if (tab === "feed") {
       // Feed always refreshes on tab switch (real-time data)
@@ -298,17 +302,22 @@ export default function SwachhMap() {
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
 
-  async function fetchFeedPage(page = 1, append = false) {
-    if (page === 1) setLoading(l => ({ ...l, feed: true }));
-    else setFeedLoadingMore(true);
+  async function fetchFeedPage(page = 1, append = false, silent = false) {
+    if (page === 1 && !silent) setLoading(l => ({ ...l, feed: true }));
+    else if (page > 1) setFeedLoadingMore(true);
     try {
       const from = (page - 1) * FEED_PAGE_SIZE;
+      // Fetch reports first, then users in parallel with a 4s timeout
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), 8000);
       const { data: reports, error: repErr } = await supabase
         .from("reports")
         .select("id, waste_type, severity, city, points_awarded, created_at, hazardous, status, user_id")
         .order("created_at", { ascending: false })
         .range(from, from + FEED_PAGE_SIZE - 1);
+      clearTimeout(fetchTimeout);
       if (repErr) throw repErr;
+      // Fetch user names in parallel — don't await sequentially
       const userIds = [...new Set((reports ?? []).map(r => r.user_id).filter(Boolean))];
       let userMap = {};
       if (userIds.length > 0) {
@@ -322,7 +331,11 @@ export default function SwachhMap() {
         level: userMap[r.user_id]?.level ?? "Spotter",
       }));
       if (append) setFeed(prev => [...prev, ...newItems]);
-      else { setFeed(newItems); hasFetchedFeed.current = true; }
+      else {
+        setFeed(newItems);
+        hasFetchedFeed.current = true;
+        try { localStorage.setItem("swachh_feed", JSON.stringify({ data: newItems, ts: Date.now() })); } catch {}
+      }
       setFeedHasMore(newItems.length === FEED_PAGE_SIZE);
       setFeedPage(page);
     } catch (e) {
@@ -335,30 +348,52 @@ export default function SwachhMap() {
   }
 
   function loadFeed() {
-    setFeed([]); setFeedPage(1); setFeedHasMore(true);
-    fetchFeedPage(1, false);
+    // Show cached feed instantly while fetching fresh data in background
+    try {
+      const cached = localStorage.getItem("swachh_feed");
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        const age = Date.now() - ts;
+        if (age < 10 * 60 * 1000) { // 10 min cache
+          setFeed(data);
+          hasFetchedFeed.current = true;
+          setFeedHasMore(data.length === FEED_PAGE_SIZE);
+          setLoading(l => ({ ...l, feed: false }));
+          // Still refresh in background but don't show loading spinner
+          fetchFeedPage(1, false, true); // silent=true
+          return;
+        }
+      }
+    } catch {}
+    setFeedPage(1); setFeedHasMore(true);
+    fetchFeedPage(1, false, false);
   }
 
   async function loadLeaderboard() {
+    try {
+      const cached = localStorage.getItem("swachh_leaders");
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < 5 * 60 * 1000) {
+          setLeaderboard(data);
+          setLoading(l => ({ ...l, leaderboard: false }));
+        }
+      }
+    } catch {}
     setLoading(l => ({ ...l, leaderboard: true }));
-    // Safety timeout — never hang forever
     const timer = setTimeout(() => setLoading(l => ({ ...l, leaderboard: false })), 8000);
     try {
-      let { data, error } = await supabase
-        .from("leaderboard_monthly")
-        .select("*")
+      const { data } = await supabase
+        .from("users")
+        .select("id, display_name, city, points_total, reports_count, level")
+        .order("points_total", { ascending: false })
         .limit(20);
-      if (error || !data?.length) {
-        ({ data } = await supabase
-          .from("users")
-          .select("id, display_name, city, points_total, reports_count, level")
-          .order("points_total", { ascending: false })
-          .limit(20));
+      if (data?.length) {
+        setLeaderboard(data);
+        try { localStorage.setItem("swachh_leaders", JSON.stringify({ data, ts: Date.now() })); } catch {}
       }
-      setLeaderboard(data ?? []);
     } catch (e) {
       console.warn("[leaderboard]", e);
-      setLeaderboard([]);
     } finally {
       clearTimeout(timer);
       setLoading(l => ({ ...l, leaderboard: false }));
@@ -370,12 +405,22 @@ export default function SwachhMap() {
     const timer = setTimeout(() => setLoading(l => ({ ...l, impact: false })), 8000);
     try {
     // Run all queries in parallel — each result safely defaults on error
+    try {
+      const cached = localStorage.getItem("swachh_impact");
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < 5 * 60 * 1000) {
+          setImpact(data);
+          setLoading(l => ({ ...l, impact: false }));
+        }
+      }
+    } catch {}
     const [r1, r2, r3, r4, r5] = await Promise.all([
       supabase.from("reports").select("*", { count: "exact", head: true }),
       supabase.from("reports").select("*", { count: "exact", head: true }).eq("status", "cleaned"),
       supabase.from("users").select("*",   { count: "exact", head: true }),
-      supabase.from("reports").select("city").not("city", "is", null),
-      supabase.from("reports").select("waste_type"),
+      supabase.from("reports").select("city").not("city", "is", null).limit(500),
+      supabase.from("reports").select("waste_type").limit(500),
     ]);
     const totalReports = r1.count;
     const cleaned = r2.count;
@@ -400,13 +445,15 @@ export default function SwachhMap() {
                  "Hazardous Waste": "#e11d48" }[type] || "#7dba5f",
       }));
 
-    setImpact({
+    const impactData = {
       totalReports:  totalReports  ?? 0,
       cleaned:       cleaned       ?? 0,
       totalUsers:    totalUsers    ?? 0,
       cities:        new Set((cities ?? []).map(r => r.city)).size,
       topTypes,
-    });
+    };
+    setImpact(impactData);
+    try { localStorage.setItem("swachh_impact", JSON.stringify({ data: impactData, ts: Date.now() })); } catch {}
     setLoading(l => ({ ...l, impact: false }));
     } catch (e) {
       console.warn("[impact]", e);
@@ -1034,7 +1081,7 @@ export default function SwachhMap() {
         {/* ── MAP TAB — litter heatmap + GPS ── */}
         {/* MapView is always mounted — just hidden when not active.
             This keeps Leaflet alive, tiles cached, and data in memory across tab switches. */}
-        <div style={{ display: tab === "map" ? "block" : "none" }} onTransitionEnd={() => { if (tab === "map" && window._leafletMap) window._leafletMap.invalidateSize(); }}>
+        <div style={{ visibility: tab === "map" ? "visible" : "hidden", height: tab === "map" ? "auto" : 0, overflow: "hidden", pointerEvents: tab === "map" ? "auto" : "none" }}>
           <div style={styles.card}>
             <h2 style={styles.cardTitle}>🗺️ Litter Heatmap</h2>
             <p style={styles.cardSub}>Live reports across India · Tap 📍 to find your location</p>
