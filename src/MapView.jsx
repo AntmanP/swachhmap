@@ -117,31 +117,28 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
 
   async function loadData(severity = "all") {
     setLoadingData(true);
-    // Safety: always hide spinner after 5s no matter what
     const safetyTimer = setTimeout(() => {
       setLoadingData(false);
       console.warn("MapView: loadData safety timeout — showing empty map");
-    }, 5000);
+    }, 8000);
     let data;
     try {
     if (devMode) {
       await new Promise(r => setTimeout(r, 400));
       data = DEV_CLUSTERS;
     } else {
-      // Ensure session is ready before querying — avoids RLS hang on cold load
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        console.warn("MapView: no session yet, using dev clusters");
-        data = DEV_CLUSTERS;
-      } else {
-      // Direct table query — RPC requires PostGIS location col which isn't
-      // populated yet. Direct scan works on location_label text column.
+      // Race the query against a 7s timeout — whichever resolves first wins
+      // This prevents silent hangs where Supabase never rejects, just stalls
+      const queryPromise = supabase
+        .from("reports")
+        .select("city, severity, waste_type, location_label")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("query timeout")), 7000)
+      );
+      const { data: rows, error: rowsError } = await Promise.race([queryPromise, timeoutPromise]);
       {
-        const { data: rows, error: rowsError } = await supabase
-          .from("reports")
-          .select("city, severity, waste_type, location_label")
-          .order("created_at", { ascending: false })
-          .limit(500);
 
         // Group by city into pseudo-clusters with approximate coords
         const CITY_COORDS = {
@@ -212,7 +209,6 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
         data = mergedData.length ? mergedData : DEV_CLUSTERS;
         if (rowsError) console.error("MapView query error:", rowsError);
       }
-      } // end session check
     }
     } catch (err) {
       console.error("MapView loadData error:", err);
