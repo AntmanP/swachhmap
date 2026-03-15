@@ -120,24 +120,36 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
     const safetyTimer = setTimeout(() => {
       setLoadingData(false);
       console.warn("MapView: loadData safety timeout — showing empty map");
-    }, 8000);
+    }, 35000); // covers 3 retry attempts
     let data;
     try {
     if (devMode) {
       await new Promise(r => setTimeout(r, 400));
       data = DEV_CLUSTERS;
     } else {
-      // Race the query against a 7s timeout — whichever resolves first wins
-      // This prevents silent hangs where Supabase never rejects, just stalls
-      const queryPromise = supabase
-        .from("reports")
-        .select("city, severity, waste_type, location_label")
-        .order("created_at", { ascending: false })
-        .limit(500);
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("query timeout")), 7000)
-      );
-      const { data: rows, error: rowsError } = await Promise.race([queryPromise, timeoutPromise]);
+      // Query with auto-retry — Supabase free tier cold starts can take 5-8s
+      let rows = null, rowsError = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const queryPromise = supabase
+          .from("reports")
+          .select("city, severity, waste_type, location_label")
+          .order("created_at", { ascending: false })
+          .limit(500);
+        const timeoutMs = attempt === 1 ? 6000 : 10000; // more time on retries
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("query timeout")), timeoutMs)
+        );
+        try {
+          const result = await Promise.race([queryPromise, timeoutPromise]);
+          rows = result.data;
+          rowsError = result.error;
+          break; // success — stop retrying
+        } catch (e) {
+          console.warn(`MapView: query attempt ${attempt} failed:`, e.message);
+          if (attempt === 3) throw e; // all retries exhausted
+          await new Promise(r => setTimeout(r, 1000)); // wait 1s before retry
+        }
+      }
       {
 
         // Group by city into pseudo-clusters with approximate coords
