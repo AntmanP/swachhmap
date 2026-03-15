@@ -75,7 +75,7 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
     const L = window.L;
     mapRef.current = L.map(mapContainer.current, { center: [20.5937, 78.9629], zoom: 4, zoomControl: false, preferCanvas: true });
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '© <a href="https://openstreetmap.org/copyright" style="color:#4a6b4e">OpenStreetMap</a>',
+      attribution: '© <a href="https://openstreetmap.org/copyright" style="color:#4a6b4e">OpenStreetMap</a> © <a href="https://carto.com/" style="color:#4a6b4e">CARTO</a>',
       maxZoom: 18,
     }).addTo(mapRef.current);
     L.control.zoom({ position: "bottomright" }).addTo(mapRef.current);
@@ -84,29 +84,22 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
       const z = mapRef.current.getZoom();
       markersRef.current.forEach(m => z >= 8 ? m.addTo(mapRef.current) : m.remove());
     });
-    // Try immediate load first, then ResizeObserver as backup
-    const triggerLoad = () => {
-      if (mapRef.current) mapRef.current.invalidateSize();
-      loadData("all");
-    };
+    // Start data fetch immediately in parallel with tile loading
+    // Don't wait for tiles — they load independently in the browser
+    loadData("all");
 
+    // Ensure map knows its real size (fixes blank tile corners)
+    const fixSize = () => { if (mapRef.current) mapRef.current.invalidateSize(); };
     if (mapContainer.current && mapContainer.current.offsetWidth > 0) {
-      // Container already has dimensions — load immediately
-      setTimeout(triggerLoad, 0);
+      setTimeout(fixSize, 0);
     } else {
-      // Wait for container to be painted
       const observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
-          if (entry.contentRect.width > 0) {
-            observer.disconnect();
-            triggerLoad();
-            break;
-          }
+          if (entry.contentRect.width > 0) { observer.disconnect(); fixSize(); break; }
         }
       });
       if (mapContainer.current) observer.observe(mapContainer.current);
-      // Hard fallback — load after 500ms regardless
-      const fallback = setTimeout(() => { observer.disconnect(); triggerLoad(); }, 500);
+      const fallback = setTimeout(() => { observer.disconnect(); fixSize(); }, 500);
       return () => { observer.disconnect(); clearTimeout(fallback); };
     }
   }, [leafletReady]);
