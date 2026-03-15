@@ -147,7 +147,7 @@ export default function SwachhMap() {
   // ── 0. Keep Supabase awake — ping DB every 4 minutes to prevent cold starts ──
   useEffect(() => {
     const ping = () => supabase.from("users").select("id").limit(1).then(() => {});
-    ping(); // immediate ping on mount
+    // Don't ping immediately — app is already making real queries on mount
     const interval = setInterval(ping, 4 * 60 * 1000); // every 4 min
     return () => clearInterval(interval);
   }, []);
@@ -220,10 +220,23 @@ export default function SwachhMap() {
   }, []);
 
   // ── 3. Reload leaderboard and impact every time those tabs are opened ─────────
+  const loadedTabs = useRef(new Set());
   useEffect(() => {
-    if (tab === "leaderboard") loadLeaderboard();
-    if (tab === "impact")      loadImpact();
-    if (tab === "feed")        loadFeed();
+    // Only reload feed/leaderboard/impact once per session unless explicitly refreshed
+    // Prevents infinite re-fetches when state updates cause re-renders
+    if (tab === "leaderboard" && !loadedTabs.current.has("leaderboard")) {
+      loadedTabs.current.add("leaderboard");
+      loadLeaderboard();
+    }
+    if (tab === "impact" && !loadedTabs.current.has("impact")) {
+      loadedTabs.current.add("impact");
+      loadImpact();
+    }
+    if (tab === "feed") {
+      // Feed always refreshes on tab switch (real-time data)
+      // but geocode enrichment is cached so it won't re-fire
+      loadFeed();
+    }
   }, [tab]);
 
   // ── 4. Subscribe to cleanup notifications for current user ───────────────────
@@ -321,13 +334,26 @@ export default function SwachhMap() {
       }
       const feedData = data ?? [];
       setFeed(feedData);
-      // Enrich with real place names in background (1 req/sec — Nominatim TOS)
-      feedData.forEach((item, i) => {
-        if (!item.location_label) return;
+      // Enrich with real place names — only items not already cached
+      // Use a local snapshot to avoid stale closure issues
+      const toEnrich = feedData.filter(item =>
+        item.location_label && !geocodeCache.current[
+          item.location_label.split(",").map(s => Number(s.trim()))
+            .map((v, i) => v.toFixed(3)).join(",")
+        ]
+      );
+      toEnrich.forEach((item, i) => {
         setTimeout(async () => {
           const place = await reverseGeocode(item.location_label);
-          if (place) setFeed(prev => prev.map(f => f.id === item.id ? { ...f, _place: place } : f));
-        }, i * 1100);
+          if (place) {
+            setFeed(prev => {
+              // Only update if the item doesn't already have a place
+              const existing = prev.find(f => f.id === item.id);
+              if (!existing || existing._place) return prev; // skip — already set
+              return prev.map(f => f.id === item.id ? { ...f, _place: place } : f);
+            });
+          }
+        }, i * 1200);
       });
     } catch (e) {
       console.warn("[feed]", e);
