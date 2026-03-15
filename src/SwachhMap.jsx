@@ -588,6 +588,11 @@ export default function SwachhMap() {
   // ── Report handlers ───────────────────────────────────────────────────────────
 
   const handleImage = useCallback(async (e) => {
+    // Hard block — no location, no report
+    if (gpsStatus !== "granted") {
+      e.target.value = "";
+      return;
+    }
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -941,7 +946,19 @@ export default function SwachhMap() {
                   </div>
                   <button
                     style={{ marginTop: 14, background: "#1a2e1c", border: "1px solid #e11d48", color: "#f87171", borderRadius: 8, padding: "8px 16px", fontSize: 12, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}
-                    onClick={() => { setGpsStatus("idle"); }}
+                    onClick={() => {
+                      setGpsStatus("requesting");
+                      navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                          setGpsCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+                          setGpsStatus("granted");
+                        },
+                        (err) => {
+                          setGpsStatus(err.code === 1 ? "denied" : "error");
+                        },
+                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                      );
+                    }}
                   >
                     Try again
                   </button>
