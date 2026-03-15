@@ -76,15 +76,15 @@ export default function MapView({ devMode = false, onLocationCaptured, mapActive
     if (!leafletReady || !mapContainer.current || mapRef.current) return;
     const L = window.L;
     mapRef.current = L.map(mapContainer.current, { center: [20.5937, 78.9629], zoom: 4, zoomControl: false, preferCanvas: true });
-    // Stadia Alidade Smooth Dark — matches app dark theme, faster CDN than OSM
-    // Free tier: no API key needed, 300k tiles/month
-    L.tileLayer("https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png", {
-      attribution: '© <a href="https://stadiamaps.com/" style="color:#4a6b4e">Stadia</a> © <a href="https://openstreetmap.org/copyright" style="color:#4a6b4e">OSM</a>',
+    // OpenFreeMap — completely free, no API key, fast CDN, dark style
+    L.tileLayer("https://tiles.openfreemap.org/styles/dark/{z}/{x}/{y}.png", {
+      attribution: '© <a href="https://openfreemap.org" style="color:#4a6b4e">OpenFreeMap</a> © <a href="https://openstreetmap.org/copyright" style="color:#4a6b4e">OSM</a>',
       maxZoom: 18, minZoom: 3,
       keepBuffer: 1,
       updateWhenIdle: true,
       updateWhenZooming: false,
       crossOrigin: true,
+      errorTileUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", // transparent on error
     }).addTo(mapRef.current);
     L.control.zoom({ position: "bottomright" }).addTo(mapRef.current);
     // No leaflet-heat — use circle markers only (avoids canvas width=0 crash)
