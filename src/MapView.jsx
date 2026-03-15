@@ -172,7 +172,11 @@ export default function MapView({ devMode = false, onLocationCaptured, mapActive
           if (!r.location_label) return [];
           const parts = r.location_label.split(",").map(s => Number(s.trim()));
           if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return [];
-          return [{ lat: parts[0], lng: parts[1], severity: r.severity, waste_type: r.waste_type }];
+          const [lat, lng] = parts;
+          // Validate coords are within real world bounds
+          if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return [];
+          if (lat === 0 && lng === 0) return []; // skip null island
+          return [{ lat, lng, severity: r.severity, waste_type: r.waste_type }];
         });
 
         // Cluster nearby GPS reports — group within ~500m grid cells
