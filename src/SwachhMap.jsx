@@ -294,20 +294,17 @@ export default function SwachhMap() {
     setLoading(l => ({ ...l, feed: true }));
     const timer = setTimeout(() => setLoading(l => ({ ...l, feed: false })), 8000);
     try {
-      let { data, error } = await supabase
-        .from("public_feed")
-        .select("*")
+      // Single direct query — skip the view (SECURITY DEFINER views are slow)
+      const { data } = await supabase
+        .from("reports")
+        .select("id, waste_type, severity, city, points_awarded, created_at, hazardous, status, users(display_name, level)")
         .order("created_at", { ascending: false })
-        .limit(50);
-      if (error || !data) {
-        // Fallback: query reports directly
-        ({ data } = await supabase
-          .from("reports")
-          .select("id, waste_type, severity, city, location_label, points_awarded, created_at, hazardous, users(display_name, level)")
-          .order("created_at", { ascending: false })
-          .limit(50));
-      }
-      const feedData = data ?? [];
+        .limit(30); // 30 is enough for feed, was 50
+      const feedData = (data ?? []).map(r => ({
+        ...r,
+        reporter_name: r.users?.display_name ?? "Anonymous",
+        level: r.users?.level ?? "Spotter",
+      }));
       setFeed(feedData);
     } catch (e) {
       console.warn("[feed]", e);
