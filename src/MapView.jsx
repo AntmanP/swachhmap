@@ -46,6 +46,23 @@ export default function MapView({ devMode = false, onLocationCaptured, mapActive
   const mapRef        = useRef(null);
   const markersRef    = useRef([]);
   const hasLoaded     = useRef(false); // prevent re-fetch on parent re-renders
+
+  // Fix white tiles when map container becomes visible after being hidden
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (mapRef.current && document.visibilityState === "visible") {
+        setTimeout(() => mapRef.current?.invalidateSize(), 100);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    // Also fix on window resize
+    const handleResize = () => mapRef.current?.invalidateSize();
+    window.addEventListener("resize", handleResize);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
   const userMarkerRef = useRef(null);
 
   const [leafletReady, setLeafletReady]           = useState(false);
@@ -76,6 +93,7 @@ export default function MapView({ devMode = false, onLocationCaptured, mapActive
     if (!leafletReady || !mapContainer.current || mapRef.current) return;
     const L = window.L;
     mapRef.current = L.map(mapContainer.current, { center: [20.5937, 78.9629], zoom: 4, zoomControl: false, preferCanvas: true });
+    window._leafletMap = mapRef.current; // expose for parent invalidateSize calls
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: '© <a href="https://openstreetmap.org/copyright" style="color:#4a6b4e">OpenStreetMap</a>',
       maxZoom: 18, minZoom: 3,
