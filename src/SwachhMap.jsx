@@ -135,6 +135,7 @@ export default function SwachhMap() {
   const [gpsCoords, setGpsCoords]   = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);   // { lat, lng, accuracy }
   const [gpsStatus, setGpsStatus]   = useState("idle"); // idle | requesting | granted | denied | error
+  const gpsStatusRef = useRef("idle"); // ref version for useCallback closures
   const [cityFallback, setCityFallback] = useState(profile?.city ?? ""); // used if GPS denied
   const fileRef = useRef();
 
@@ -589,7 +590,7 @@ export default function SwachhMap() {
 
   const handleImage = useCallback(async (e) => {
     // Hard block — use ref to avoid stale closure in useCallback
-    if (gpsStatusRef.current !== "granted") {
+    if (gpsStatusRef.current !== "granted" && !gpsCoords) {
       e.target.value = "";
       return;
     }
