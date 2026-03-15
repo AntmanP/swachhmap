@@ -290,31 +290,6 @@ export default function SwachhMap() {
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
 
-  // ── Reverse-geocode cache ────────────────────────────────────────────────────
-  const geocodeCache = useRef({});
-
-  async function reverseGeocode(location_label) {
-    if (!location_label) return null;
-    const parts = location_label.split(",").map(s => Number(s.trim()));
-    if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
-    const [lat, lng] = parts;
-    const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
-    if (geocodeCache.current[key]) return geocodeCache.current[key];
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=14&addressdetails=1`,
-        { headers: { "Accept-Language": "en", "User-Agent": "SwachhMap/1.0" } }
-      );
-      const json = await res.json();
-      const a = json.address ?? {};
-      const area = a.suburb ?? a.neighbourhood ?? a.village ?? a.town ?? a.county ?? "";
-      const cityName = a.city ?? a.town ?? a.state_district ?? a.state ?? "";
-      const label = [area, cityName].filter(Boolean).join(", ") || null;
-      geocodeCache.current[key] = label;
-      return label;
-    } catch { return null; }
-  }
-
   async function loadFeed() {
     setLoading(l => ({ ...l, feed: true }));
     const timer = setTimeout(() => setLoading(l => ({ ...l, feed: false })), 8000);
@@ -334,27 +309,6 @@ export default function SwachhMap() {
       }
       const feedData = data ?? [];
       setFeed(feedData);
-      // Enrich with real place names — only items not already cached
-      // Use a local snapshot to avoid stale closure issues
-      const toEnrich = feedData.filter(item =>
-        item.location_label && !geocodeCache.current[
-          item.location_label.split(",").map(s => Number(s.trim()))
-            .map((v, i) => v.toFixed(3)).join(",")
-        ]
-      );
-      toEnrich.forEach((item, i) => {
-        setTimeout(async () => {
-          const place = await reverseGeocode(item.location_label);
-          if (place) {
-            setFeed(prev => {
-              // Only update if the item doesn't already have a place
-              const existing = prev.find(f => f.id === item.id);
-              if (!existing || existing._place) return prev; // skip — already set
-              return prev.map(f => f.id === item.id ? { ...f, _place: place } : f);
-            });
-          }
-        }, i * 1200);
-      });
     } catch (e) {
       console.warn("[feed]", e);
       setFeed([]);
@@ -1107,7 +1061,7 @@ export default function SwachhMap() {
                 <div style={styles.feedBody}>
                   <div style={styles.feedTop}>
                     <span style={styles.feedUser}>{item.reporter_name}</span>
-                    {(item._place || item.city) && <span style={styles.feedCity}>📍 {item._place ?? item.city}</span>}
+                    {item.city && <span style={styles.feedCity}>📍 {item.city}</span>}
                     <span style={styles.feedTime}>{timeAgo(item.created_at)}</span>
                   </div>
                   <div style={styles.feedType}>{item.waste_type}</div>
