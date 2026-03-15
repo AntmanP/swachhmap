@@ -294,16 +294,31 @@ export default function SwachhMap() {
     setLoading(l => ({ ...l, feed: true }));
     const timer = setTimeout(() => setLoading(l => ({ ...l, feed: false })), 8000);
     try {
-      // Single direct query — skip the view (SECURITY DEFINER views are slow)
-      const { data } = await supabase
+      // Query reports directly, then fetch user names separately
+      // Avoids FK join issues if foreign key isn't explicitly defined in Supabase
+      const { data: reports, error: repErr } = await supabase
         .from("reports")
-        .select("id, waste_type, severity, city, points_awarded, created_at, hazardous, status, users(display_name, level)")
+        .select("id, waste_type, severity, city, points_awarded, created_at, hazardous, status, user_id")
         .order("created_at", { ascending: false })
-        .limit(30); // 30 is enough for feed, was 50
-      const feedData = (data ?? []).map(r => ({
+        .limit(30);
+
+      if (repErr) throw repErr;
+
+      // Get unique user IDs and fetch their names
+      const userIds = [...new Set((reports ?? []).map(r => r.user_id).filter(Boolean))];
+      let userMap = {};
+      if (userIds.length > 0) {
+        const { data: users } = await supabase
+          .from("users")
+          .select("id, display_name, level")
+          .in("id", userIds);
+        (users ?? []).forEach(u => { userMap[u.id] = u; });
+      }
+
+      const feedData = (reports ?? []).map(r => ({
         ...r,
-        reporter_name: r.users?.display_name ?? "Anonymous",
-        level: r.users?.level ?? "Spotter",
+        reporter_name: userMap[r.user_id]?.display_name ?? "Anonymous",
+        level: userMap[r.user_id]?.level ?? "Spotter",
       }));
       setFeed(feedData);
     } catch (e) {
