@@ -282,16 +282,16 @@ export default function SwachhMap() {
     if (gpsStatus === "granted" || gpsStatus === "requesting") return;
     if (!("geolocation" in navigator)) { setGpsStatus("error"); return; }
 
-    setGpsStatus("requesting");
+    setGpsStatus("requesting"); gpsStatusRef.current = "requesting";
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setGpsCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
-        setGpsStatus("granted");
+        setGpsStatus("granted"); gpsStatusRef.current = "granted";
       },
       (err) => {
         console.warn("[GPS] denied or error:", err.message);
-        setGpsStatus(err.code === 1 ? "denied" : "error");
-        // Pre-fill city fallback from profile
+        const s = err.code === 1 ? "denied" : "error";
+        setGpsStatus(s); gpsStatusRef.current = s;
         setCityFallback(profile?.city ?? "");
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
@@ -588,8 +588,8 @@ export default function SwachhMap() {
   // ── Report handlers ───────────────────────────────────────────────────────────
 
   const handleImage = useCallback(async (e) => {
-    // Hard block — no location, no report
-    if (gpsStatus !== "granted") {
+    // Hard block — use ref to avoid stale closure in useCallback
+    if (gpsStatusRef.current !== "granted") {
       e.target.value = "";
       return;
     }
