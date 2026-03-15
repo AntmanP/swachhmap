@@ -120,22 +120,22 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
     const safetyTimer = setTimeout(() => {
       setLoadingData(false);
       console.warn("MapView: loadData safety timeout — showing empty map");
-    }, 35000); // covers 3 retry attempts
+    }, 45000); // covers 3 retry attempts with waits
     let data;
     try {
     if (devMode) {
       await new Promise(r => setTimeout(r, 400));
       data = DEV_CLUSTERS;
     } else {
-      // Query with auto-retry — Supabase free tier cold starts can take 5-8s
+      // Lightweight query — only fetch what we need, with retry for cold starts
       let rows = null, rowsError = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
         const queryPromise = supabase
           .from("reports")
-          .select("city, severity, waste_type, location_label")
-          .order("created_at", { ascending: false })
-          .limit(500);
-        const timeoutMs = attempt === 1 ? 6000 : 10000; // more time on retries
+          .select("severity, waste_type, location_label, city")
+          .not("location_label", "is", null)
+          .limit(300);
+        const timeoutMs = attempt === 1 ? 8000 : 12000;
         const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error("query timeout")), timeoutMs)
         );
@@ -143,11 +143,11 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
           const result = await Promise.race([queryPromise, timeoutPromise]);
           rows = result.data;
           rowsError = result.error;
-          break; // success — stop retrying
+          break;
         } catch (e) {
           console.warn(`MapView: query attempt ${attempt} failed:`, e.message);
-          if (attempt === 3) throw e; // all retries exhausted
-          await new Promise(r => setTimeout(r, 1000)); // wait 1s before retry
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+          else throw e;
         }
       }
       {

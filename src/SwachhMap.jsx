@@ -144,6 +144,14 @@ export default function SwachhMap() {
   const [impact, setImpact]           = useState(null);
   const [loading, setLoading]         = useState({ feed: true, leaderboard: true, impact: true });
 
+  // ── 0. Keep Supabase awake — ping DB every 4 minutes to prevent cold starts ──
+  useEffect(() => {
+    const ping = () => supabase.from("users").select("id").limit(1).then(() => {});
+    ping(); // immediate ping on mount
+    const interval = setInterval(ping, 4 * 60 * 1000); // every 4 min
+    return () => clearInterval(interval);
+  }, []);
+
   // ── 1. Auth listener — single source of truth for session state ────────────
   // Fires on: page load (restores session from localStorage), sign in,
   // sign out, token refresh, and OAuth redirect callback.
