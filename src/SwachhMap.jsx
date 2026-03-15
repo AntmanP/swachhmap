@@ -1031,20 +1031,20 @@ export default function SwachhMap() {
         )}
 
         {/* ── MAP TAB — litter heatmap + GPS ── */}
-        {/* key prop forces full remount when switching to map tab — prevents HMR stale instances */}
-        {tab === "map" && (
+        {/* MapView is always mounted — just hidden when not active.
+            This keeps Leaflet alive, tiles cached, and data in memory across tab switches. */}
+        <div style={{ display: tab === "map" ? "block" : "none" }}>
           <div style={styles.card}>
             <h2 style={styles.cardTitle}>🗺️ Litter Heatmap</h2>
             <p style={styles.cardSub}>Live reports across India · Tap 📍 to find your location</p>
             <MapView
-              key="map-view"
               devMode={false}
               onLocationCaptured={(coords) => {
                 setGpsCoords(coords);
                 setGpsStatus("granted");
               }}
             />
-            {gpsCoords && (
+            {tab === "map" && gpsCoords && (
               <div style={{ marginTop: 12, padding: "10px 14px", background: "#0d1f10", border: "1px solid #2a5a2e", borderRadius: 10 }}>
                 <div style={{ fontSize: 12, color: "#7dba5f", fontWeight: 600 }}>✅ GPS captured for your next report</div>
                 <div style={{ fontSize: 11, color: "#4a6b4e", marginTop: 2 }}>
@@ -1056,7 +1056,7 @@ export default function SwachhMap() {
               </div>
             )}
           </div>
-        )}
+        </div>
 
         {/* ── FEED TAB — real data from public_feed view ── */}
         {tab === "feed" && (
