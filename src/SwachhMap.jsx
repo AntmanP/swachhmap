@@ -931,13 +931,30 @@ export default function SwachhMap() {
             <p style={styles.cardSub}>Photograph it. Tag it. Earn points. Make change.</p>
 
             {step === "idle" && (
-              <div style={styles.uploadZone} onClick={() => fileRef.current.click()}>
-                <div style={styles.uploadIcon}>📷</div>
-                <div style={styles.uploadText}>Tap to photograph litter</div>
-                <div style={styles.uploadHint}>or drag & drop an image</div>
-                <input ref={fileRef} type="file" accept="image/*" capture="environment"
-                  style={{ display: "none" }} onChange={handleImage} />
-              </div>
+              (gpsStatus === "denied" || gpsStatus === "error") ? (
+                <div style={{ ...styles.uploadZone, cursor: "default", opacity: 0.7, borderColor: "#e11d48" }}>
+                  <div style={{ fontSize: 36 }}>📍</div>
+                  <div style={{ color: "#f87171", fontWeight: 600, fontSize: 15, marginTop: 8 }}>Location access required</div>
+                  <div style={{ color: "#4a6b4e", fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
+                    SwachhMap needs your location to pin reports on the map.<br/>
+                    Please enable location access in your browser settings and refresh.
+                  </div>
+                  <button
+                    style={{ marginTop: 14, background: "#1a2e1c", border: "1px solid #e11d48", color: "#f87171", borderRadius: 8, padding: "8px 16px", fontSize: 12, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}
+                    onClick={() => { setGpsStatus("idle"); }}
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : (
+                <div style={styles.uploadZone} onClick={() => gpsStatus === "requesting" ? null : fileRef.current.click()}>
+                  <div style={styles.uploadIcon}>{gpsStatus === "requesting" ? "📍" : "📷"}</div>
+                  <div style={styles.uploadText}>{gpsStatus === "requesting" ? "Getting your location..." : "Tap to photograph litter"}</div>
+                  <div style={styles.uploadHint}>{gpsStatus === "requesting" ? "Please allow location access when prompted" : "or drag & drop an image"}</div>
+                  <input ref={fileRef} type="file" accept="image/*" capture="environment"
+                    style={{ display: "none" }} onChange={handleImage} />
+                </div>
+              )
             )}
 
             {step === "analyzing" && (
