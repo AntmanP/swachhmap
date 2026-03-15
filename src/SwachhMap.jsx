@@ -288,6 +288,18 @@ export default function SwachhMap() {
     );
   }, [tab]);
 
+  // ── Feed infinite scroll ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!feedSentinelRef.current || !feedHasMore || feedLoadingMore) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && tab === "feed") {
+        fetchFeedPage(feedPage + 1, true);
+      }
+    }, { threshold: 0.1 });
+    observer.observe(feedSentinelRef.current);
+    return () => observer.disconnect();
+  }, [feedHasMore, feedLoadingMore, feedPage, tab]);
+
   // ── Data loaders ─────────────────────────────────────────────────────────────
 
   async function loadFeed() {
@@ -1025,7 +1037,7 @@ export default function SwachhMap() {
         {/* ── MAP TAB — litter heatmap + GPS ── */}
         {/* MapView is always mounted — just hidden when not active.
             This keeps Leaflet alive, tiles cached, and data in memory across tab switches. */}
-        <div style={{ display: tab === "map" ? "block" : "none" }}>
+        <div style={{ display: tab === "map" ? "block" : "none" }} onTransitionEnd={() => { if (tab === "map" && window._leafletMap) window._leafletMap.invalidateSize(); }}>
           <div style={styles.card}>
             <h2 style={styles.cardTitle}>🗺️ Litter Heatmap</h2>
             <p style={styles.cardSub}>Live reports across India · Tap 📍 to find your location</p>
@@ -1088,6 +1100,13 @@ export default function SwachhMap() {
                 </div>
               </div>
             ))}
+            <div ref={feedSentinelRef} style={{ height: 1 }} />
+            {feedLoadingMore && (
+              <div style={{ textAlign:"center", padding:"12px 0", color:"#4a6b4e", fontSize:13 }}>Loading more…</div>
+            )}
+            {!feedHasMore && feed.length > 0 && (
+              <div style={{ textAlign:"center", padding:"12px 0", color:"#2a4a2e", fontSize:12 }}>— all caught up —</div>
+            )}
           </div>
         )}
 
