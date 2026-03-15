@@ -1019,6 +1019,7 @@ export default function SwachhMap() {
             <p style={styles.cardSub}>Live reports across India · Tap 📍 to find your location</p>
             <MapView
               devMode={false}
+              mapActive={tab === "map"}
               onLocationCaptured={(coords) => {
                 setGpsCoords(coords);
                 setGpsStatus("granted");

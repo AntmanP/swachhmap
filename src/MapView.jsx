@@ -41,7 +41,7 @@ const DEV_CLUSTERS = [
 
 // clustersToHeatPoints removed — leaflet-heat replaced with circle markers
 
-export default function MapView({ devMode = true, onLocationCaptured }) {
+export default function MapView({ devMode = false, onLocationCaptured, mapActive = false }) {
   const mapContainer  = useRef(null);
   const mapRef        = useRef(null);
   const markersRef    = useRef([]);
@@ -58,6 +58,7 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
 
   // Load Leaflet + leaflet-heat from CDN
   useEffect(() => {
+    if (!mapActive) return;
     if (window.L) { setLeafletReady(true); return; }
     const css = document.createElement("link");
     css.rel = "stylesheet";
@@ -68,16 +69,20 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
     s1.onload  = () => setLeafletReady(true);
     s1.onerror = () => setLeafletReady(true);
     document.head.appendChild(s1);
-  }, []);
+  }, [mapActive]);
 
   // Init map once Leaflet is ready
   useEffect(() => {
     if (!leafletReady || !mapContainer.current || mapRef.current) return;
     const L = window.L;
     mapRef.current = L.map(mapContainer.current, { center: [20.5937, 78.9629], zoom: 4, zoomControl: false, preferCanvas: true });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '© <a href="https://openstreetmap.org/copyright" style="color:#4a6b4e">OpenStreetMap</a> © <a href="https://carto.com/" style="color:#4a6b4e">CARTO</a>',
-      maxZoom: 18,
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+      attribution: '© <a href="https://openstreetmap.org/copyright" style="color:#4a6b4e">OSM</a> © <a href="https://carto.com/" style="color:#4a6b4e">CARTO</a>',
+      subdomains: "abcd",
+      maxZoom: 19, minZoom: 3,
+      keepBuffer: 0,
+      updateWhenIdle: true,
+      updateWhenZooming: false,
     }).addTo(mapRef.current);
     L.control.zoom({ position: "bottomright" }).addTo(mapRef.current);
     // No leaflet-heat — use circle markers only (avoids canvas width=0 crash)
@@ -185,6 +190,7 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
         const gpsReports = Object.values(cells).map(cell => {
           const avgLat = cell.lats.reduce((a,b) => a+b, 0) / cell.lats.length;
           const avgLng = cell.lngs.reduce((a,b) => a+b, 0) / cell.lngs.length;
+          if (isNaN(avgLat) || isNaN(avgLng)) return null;
           const severities = cell.reports.map(r => r.severity);
           const maxSev = ["Critical","High","Medium","Low"].find(s => severities.includes(s)) ?? "Low";
           const types = cell.reports.map(r => r.waste_type);
@@ -192,7 +198,7 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
             .sort((a,b) => b[1]-a[1])[0]?.[0] ?? "Mixed Litter";
           return { centroid_lat: avgLat, centroid_lng: avgLng,
             report_count: cell.reports.length, dominant_type: dominant, max_severity: maxSev };
-        });
+        }).filter(Boolean);
 
         // Add city-based clusters for reports without GPS coords
         const cityData = Object.values(grouped)
@@ -247,11 +253,16 @@ export default function MapView({ devMode = true, onLocationCaptured }) {
   function renderOnMap(data) {
     const L = window.L;
     if (!mapRef.current || !L) return;
-    // Remove old markers
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
     const currentZoom = mapRef.current.getZoom();
-    data.forEach(c => {
+    // Filter out any clusters with invalid coords before rendering
+    const valid = data.filter(c =>
+      c.centroid_lat != null && c.centroid_lng != null &&
+      !isNaN(c.centroid_lat) && !isNaN(c.centroid_lng) &&
+      Math.abs(c.centroid_lat) <= 90 && Math.abs(c.centroid_lng) <= 180
+    );
+    valid.forEach(c => {
       const color  = SEVERITY_COLOR[c.max_severity] ?? "#7dba5f";
       // Outer glow ring — simulates heatmap density
       const glowRadius = Math.max(18, Math.min(60, Math.sqrt(c.report_count) * 8));
