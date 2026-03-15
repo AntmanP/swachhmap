@@ -76,8 +76,8 @@ export default function MapView({ devMode = false, onLocationCaptured, mapActive
     if (!leafletReady || !mapContainer.current || mapRef.current) return;
     const L = window.L;
     mapRef.current = L.map(mapContainer.current, { center: [20.5937, 78.9629], zoom: 4, zoomControl: false, preferCanvas: true });
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-      attribution: '© <a href="https://openstreetmap.org/copyright" style="color:#4a6b4e">OSM</a> © <a href="https://carto.com/" style="color:#4a6b4e">CARTO</a>',
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '© <a href="https://openstreetmap.org/copyright" style="color:#4a6b4e">OpenStreetMap</a>',
       subdomains: "abcd",
       maxZoom: 19, minZoom: 3,
       keepBuffer: 0,
