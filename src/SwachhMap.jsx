@@ -1031,7 +1031,20 @@ export default function SwachhMap() {
                         </div>
                       </div>
                       <button style={{ marginLeft:"auto", background:"none", border:"none", color:"#3a5a3e", fontSize:11, cursor:"pointer" }}
-                        onClick={() => { setGpsCoords(null); setGpsStatus("idle"); }}>
+                        onClick={() => {
+                          setGpsCoords(null);
+                          setGpsStatus("requesting");
+                          navigator.geolocation.getCurrentPosition(
+                            (pos) => {
+                              setGpsCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+                              setGpsStatus("granted");
+                            },
+                            (err) => {
+                              setGpsStatus(err.code === 1 ? "denied" : "error");
+                            },
+                            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                          );
+                        }}>
                         ↺ Retry
                       </button>
                     </div>
