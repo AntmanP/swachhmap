@@ -140,6 +140,12 @@ export default function SwachhMap() {
 
   // ── Feed, leaderboard, impact (from DB) ─────────────────────────────────────
   const [feed, setFeed]               = useState([]);
+  const [feedPage, setFeedPage]             = useState(1);
+  const [feedHasMore, setFeedHasMore]       = useState(true);
+  const [feedLoadingMore, setFeedLoadingMore] = useState(false);
+  const feedSentinelRef                     = useRef(null);
+  const FEED_PAGE_SIZE                      = 10;
+  const hasFetchedFeed                      = useRef(false);
   const [leaderboard, setLeaderboard] = useState([]);
   const [impact, setImpact]           = useState(null);
   const [loading, setLoading]         = useState({ feed: true, leaderboard: true, impact: true });
@@ -288,58 +294,49 @@ export default function SwachhMap() {
     );
   }, [tab]);
 
-  // ── Feed infinite scroll ─────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!feedSentinelRef.current || !feedHasMore || feedLoadingMore) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && tab === "feed") {
-        fetchFeedPage(feedPage + 1, true);
-      }
-    }, { threshold: 0.1 });
-    observer.observe(feedSentinelRef.current);
-    return () => observer.disconnect();
-  }, [feedHasMore, feedLoadingMore, feedPage, tab]);
+  // Feed loads more on button tap — no IntersectionObserver race conditions
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
 
-  async function loadFeed() {
-    setLoading(l => ({ ...l, feed: true }));
-    const timer = setTimeout(() => setLoading(l => ({ ...l, feed: false })), 8000);
+  async function fetchFeedPage(page = 1, append = false) {
+    if (page === 1) setLoading(l => ({ ...l, feed: true }));
+    else setFeedLoadingMore(true);
     try {
-      // Query reports directly, then fetch user names separately
-      // Avoids FK join issues if foreign key isn't explicitly defined in Supabase
+      const from = (page - 1) * FEED_PAGE_SIZE;
       const { data: reports, error: repErr } = await supabase
         .from("reports")
         .select("id, waste_type, severity, city, points_awarded, created_at, hazardous, status, user_id")
         .order("created_at", { ascending: false })
-        .limit(30);
-
+        .range(from, from + FEED_PAGE_SIZE - 1);
       if (repErr) throw repErr;
-
-      // Get unique user IDs and fetch their names
       const userIds = [...new Set((reports ?? []).map(r => r.user_id).filter(Boolean))];
       let userMap = {};
       if (userIds.length > 0) {
         const { data: users } = await supabase
-          .from("users")
-          .select("id, display_name, level")
-          .in("id", userIds);
+          .from("users").select("id, display_name, level").in("id", userIds);
         (users ?? []).forEach(u => { userMap[u.id] = u; });
       }
-
-      const feedData = (reports ?? []).map(r => ({
+      const newItems = (reports ?? []).map(r => ({
         ...r,
         reporter_name: userMap[r.user_id]?.display_name ?? "Anonymous",
         level: userMap[r.user_id]?.level ?? "Spotter",
       }));
-      setFeed(feedData);
+      if (append) setFeed(prev => [...prev, ...newItems]);
+      else { setFeed(newItems); hasFetchedFeed.current = true; }
+      setFeedHasMore(newItems.length === FEED_PAGE_SIZE);
+      setFeedPage(page);
     } catch (e) {
       console.warn("[feed]", e);
-      setFeed([]);
+      if (!append) setFeed([]);
     } finally {
-      clearTimeout(timer);
       setLoading(l => ({ ...l, feed: false }));
+      setFeedLoadingMore(false);
     }
+  }
+
+  function loadFeed() {
+    setFeed([]); setFeedPage(1); setFeedHasMore(true);
+    fetchFeedPage(1, false);
   }
 
   async function loadLeaderboard() {
@@ -1071,7 +1068,7 @@ export default function SwachhMap() {
               <span style={styles.liveTag}>● LIVE</span>
             </div>
 
-            {loading.feed ? (
+            {(loading.feed || !hasFetchedFeed.current) ? (
               <div style={styles.loadingMsg}>Loading feed…</div>
             ) : feed.length === 0 ? (
               <div style={styles.emptyMsg}>
@@ -1100,11 +1097,17 @@ export default function SwachhMap() {
                 </div>
               </div>
             ))}
-            <div ref={feedSentinelRef} style={{ height: 1 }} />
-            {feedLoadingMore && (
-              <div style={{ textAlign:"center", padding:"12px 0", color:"#4a6b4e", fontSize:13 }}>Loading more…</div>
+            {hasFetchedFeed.current && feedHasMore && !loading.feed && (
+              <div style={{ textAlign:"center", padding:"16px 0" }}>
+                <button
+                  style={{ background:"#1a2e1c", border:"1px solid #2a4a2e", color:"#7dba5f", borderRadius:10, padding:"8px 24px", fontSize:13, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}
+                  onClick={() => !feedLoadingMore && fetchFeedPage(feedPage + 1, true)}
+                  disabled={feedLoadingMore}>
+                  {feedLoadingMore ? "Loading…" : "Load more"}
+                </button>
+              </div>
             )}
-            {!feedHasMore && feed.length > 0 && (
+            {hasFetchedFeed.current && !feedHasMore && !loading.feed && feed.length > 0 && (
               <div style={{ textAlign:"center", padding:"12px 0", color:"#2a4a2e", fontSize:12 }}>— all caught up —</div>
             )}
           </div>
