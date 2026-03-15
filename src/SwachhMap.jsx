@@ -682,6 +682,10 @@ export default function SwachhMap() {
       setTimeout(() => refreshProfile(), 1500);
 
       setSubmitted(true);
+      // Invalidate leaderboard + impact so they reload with fresh points
+      loadedTabs.current.delete("leaderboard");
+      loadedTabs.current.delete("impact");
+      try { localStorage.removeItem("swachh_leaders"); localStorage.removeItem("swachh_impact"); } catch {}
       // Auto-reset after 3 seconds so tapping another tab and back isn't needed
       setTimeout(() => {
         setStep("idle");
